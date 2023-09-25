@@ -1,21 +1,32 @@
 import math
 import numpy as np
 import pandas as pd
-import pprint
 
+from typing import Any
 from pandas import DataFrame
 
 
 class Node:
-    def __init__(self, name: str):
+    def __init__(self, name: Any):
         self.name = name
-        self.left = None
-        self.right = None
+        self.children: dict[Any, Node] = dict()
+
+    def add_child(self, value, node) -> None:
+        self.children[value] = node
+
+    def __str__(self, level=0):
+        indentation = "    " * level
+        ret = f"{self.name}\n" if level == 0 else "\n"
+        for value, child in self.children.items():
+            ret += f"{indentation}└── '{str(value)}' ── {child.name}"
+            ret += f"{child.__str__(level + 4)}"
+        return ret
 
 
 class DecisionTree:
     def __init__(self, ds: DataFrame):
         self._ds = ds
+        self.tree = None
 
     @staticmethod
     def __get_output_column(ds: DataFrame):
@@ -47,27 +58,41 @@ class DecisionTree:
         return attrs[np.argmax(info_gains)]
 
     @staticmethod
-    def _get_subset(ds, node, value):
-        return ds[ds[node] == value].reset_index(drop=True)
+    def _get_subset(ds, attr, value):
+        return ds[ds[attr] == value].reset_index(drop=True)
 
-    def _build_tree(self, ds: DataFrame | None = None, tree=None):
+    def _build_tree(self, ds: DataFrame | None = None):
         if ds is None:
             ds = self._ds
-        node = self._find_optimal_attr(ds)
-        attr_values = np.unique(ds[node])
-        if tree is None:
-            tree = {node: {}}
-        for value in attr_values:
-            subset = self._get_subset(ds, node, value)
-            unique_values, counts = np.unique(self.__get_output_column(subset), return_counts=True)
-            if len(counts) == 1:  # Checking purity of subset
-                tree[node][value] = unique_values[0]
+        attr = self._find_optimal_attr(ds)
+        tree = Node(attr)
+        for value in np.unique(ds[attr]):
+            subset = self._get_subset(ds, attr, value)
+            output_values, counts = np.unique(self.__get_output_column(subset), return_counts=True)
+            if len(counts) == 1:
+                tree.add_child(value, Node(output_values[0]))
             else:
-                tree[node][value] = self._build_tree(subset)  # Calling the function recursively
+                subtree = self._build_tree(subset)
+                tree.add_child(value, subtree)
         return tree
 
     def train(self):
-        return self._build_tree()
+        self.tree = self._build_tree()
+
+    def predict(self, test_data):
+        def recursive_predict(node, data):
+            if not node.children:
+                return node.name
+            else:
+                attr_value = data[node.name]
+                if attr_value in node.children:
+                    return recursive_predict(node.children[attr_value], data)
+                else:
+                    return "Unknown"
+
+        if self.tree is None:
+            raise ValueError("The decision tree has not been trained. Call the 'train' method first.")
+        return recursive_predict(self.tree, test_data)
 
 
 outlook = "overcast,overcast,overcast,overcast,rainy,rainy,rainy,rainy,rainy,sunny,sunny,sunny,sunny,sunny".split(",")
@@ -75,9 +100,13 @@ temp = "hot,cool,mild,hot,mild,cool,cool,mild,mild,hot,hot,mild,cool,mild".split
 humidity = "high,normal,high,normal,high,normal,normal,normal,high,high,high,high,normal,normal".split(",")
 windy = "FALSE,TRUE,TRUE,FALSE,FALSE,FALSE,TRUE,FALSE,TRUE,FALSE,TRUE,FALSE,FALSE,TRUE".split(",")
 play = "yes,yes,yes,yes,yes,yes,no,yes,no,no,no,no,yes,yes".split(",")
-
 dataset = {"outlook": outlook, "temp": temp, "humidity": humidity, "windy": windy, "play": play}
 df = pd.DataFrame(dataset, columns=["outlook", "temp", "humidity", "windy", "play"])
-decision_tree = DecisionTree(ds=pd.read_csv("diabetes_dataset.csv"))
-t = decision_tree.train()
-pprint.pprint(t)
+
+decision_tree = DecisionTree(ds=df)
+decision_tree.train()
+print(decision_tree.tree)
+
+test_data = {"outlook": "sunny", "temp": "mild", "humidity": "normal", "windy": "TRUE"}
+print(decision_tree.predict(test_data))
+

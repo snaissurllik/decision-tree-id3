@@ -3,7 +3,15 @@ import numpy as np
 import pandas as pd
 
 from typing import Any
-from pandas import DataFrame, Index, Series
+from pandas import (
+    DataFrame,
+    Index,
+    Series
+)
+from exceptions import (
+    ModelNotTrainedError,
+    InvalidDatasetError
+)
 
 
 class Node:
@@ -50,35 +58,35 @@ class ID3DecisionTree:
     def __init__(self, ds: DataFrame, threshold: float = 0.8):
         self.__ds = ds
         self.__tree = None
-        self.threshold = threshold
-        self.output_column_name = self.__get_output_column_name(ds)
+        self.__threshold = threshold
+        self.__target_column_name = self.__get_target_column_name(ds)
 
     @staticmethod
-    def __get_output_column_name(ds: DataFrame) -> str:
+    def __get_target_column_name(ds: DataFrame) -> str:
         """
-        Get the name of the output column in the dataset.
+        Get the name of the target column in the dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
-            str: The name of the output column.
+            str: The name of the target column.
         """
 
         return ds.keys()[-1]
 
-    def __get_output_column(self, ds: DataFrame) -> Series:
+    def __get_target_column(self, ds: DataFrame) -> Series:
         """
-        Get the output column from the dataset.
+        Get the target column from the dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
-            Series: The output column.
+            Series: The target column.
         """
 
-        return ds[self.output_column_name]
+        return ds[self.__target_column_name]
 
     @staticmethod
     def __get_ds_features(ds: DataFrame) -> Index:
@@ -86,7 +94,7 @@ class ID3DecisionTree:
         Get the names of the feature columns in the dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
             Index: The feature column names.
@@ -100,7 +108,7 @@ class ID3DecisionTree:
         Get the names of all columns in the dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
             Index: The column names.
@@ -110,19 +118,19 @@ class ID3DecisionTree:
 
     def __calc_entropy(self, ds) -> float:
         """
-        Calculate the entropy of the output column in the dataset.
+        Calculate the entropy of the target column in the dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
             float: The calculated entropy value.
         """
 
         entropy = 0
-        output_column = self.__get_output_column(ds)
-        for value in output_column.unique():
-            p = output_column.value_counts()[value] / len(output_column)
+        target_column = self.__get_target_column(ds)
+        for value in target_column.unique():
+            p = target_column.value_counts()[value] / len(target_column)
             entropy -= p * math.log2(p) if p > 0 else 0
         return entropy
 
@@ -132,7 +140,7 @@ class ID3DecisionTree:
 
         Args:
             feature (str): The name of the feature column.
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
             float: The calculated information gain value.
@@ -150,7 +158,7 @@ class ID3DecisionTree:
         Find the optimal feature for splitting the dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
 
         Returns:
             str | None: The name of the optimal feature.
@@ -167,7 +175,7 @@ class ID3DecisionTree:
         Get a subset of the dataset where the specified feature has a given value.
 
         Args:
-            ds (DataFrame): The input dataset containing features and output labels.
+            ds (DataFrame): The input dataset containing features and target labels.
             feature (str): The name of the feature column.
             value: The value to filter the feature column.
 
@@ -178,38 +186,38 @@ class ID3DecisionTree:
         ds = ds[ds[feature] == value].reset_index(drop=True)
         return ds.drop(feature, axis=1)
 
-    def __get_output_value_threshold(self, values, counts):
+    def __get_target_value_threshold(self, ds: DataFrame):
         """
-        Get the output value based on a threshold condition.
+        Get the target value based on a threshold condition.
 
         Args:
-            values: Iterable of unique output values.
-            counts: Iterable of counts corresponding to each unique output value.
+            ds: Dataset with target column
 
         Returns:
-            The selected output value or None.
+            The selected target value or None.
         """
-
+        # Get target values and their quantity
+        target_values, counts = np.unique(self.__get_target_column(ds), return_counts=True)
         total_count = sum(counts)
-        max_count_value, max_count = values[0], counts[0]
-        for value, count in zip(values, counts):
+        max_count_value, max_count = target_values[0], counts[0]
+        for value, count in zip(target_values, counts):
             if count > max_count:
                 max_count_value = value
                 max_count = count
-        return max_count_value if max_count / total_count >= self.threshold else None
+        return max_count_value if max_count / total_count >= self.__threshold else None
 
-    def __get_most_common_output_value(self, ds: DataFrame):
+    def __get_most_common_target_value(self, ds: DataFrame):
         """
-        Get the most common output value in the given dataset.
+        Get the most common target value in the given dataset.
 
         Args:
-            ds (DataFrame): The input dataset containing output labels.
+            ds (DataFrame): The input dataset containing target labels.
 
         Returns:
-            Any: The most common output value in the dataset.
+            Any: The most common target value in the dataset.
         """
 
-        return self.__get_output_column(ds).mode()[0]
+        return self.__get_target_column(ds).mode()[0]
 
     def __build_tree(self, ds: DataFrame | None = None):
         """
@@ -225,10 +233,14 @@ class ID3DecisionTree:
 
         if ds is None:
             ds = self.__ds
-        
-        # If no features left, return leaf node with most common output value
+
+        # If all vectors belong to the same class, return leaf node with value of this class
+        if self.__get_target_column(ds).nunique() == 1:
+            return Node(self.__get_target_column(ds).iloc[0])
+
+        # If no features left, return leaf node with most common target value
         if len(self.__get_ds_features(ds)) == 0:
-            return Node(self.__get_most_common_output_value(ds))
+            return Node(self.__get_most_common_target_value(ds))
 
         # Find most optimal feature
         feature = self.__find_optimal_feature(ds)
@@ -240,21 +252,18 @@ class ID3DecisionTree:
             # Create subset with rows where feature equals to certain value
             subset = self.__get_subset(ds, feature, value)
 
-            # Get output values and their quantity
-            output_values, counts = np.unique(self.__get_output_column(ds), return_counts=True)
+            # Check if quantity of one of target values exceeds threshold
+            if (target_value := self.__get_target_value_threshold(subset)) is not None:
 
-            # Check if quantity of one of output values exceeds threshold
-            if (output_value := self.__get_output_value_threshold(output_values, counts)) is not None:
-
-                # Add leaf with found output value
-                tree.add_child(value, Node(output_value))
+                # Add leaf with found target value
+                tree.add_child(value, Node(target_value))
             else:
-
                 # Call method recursively for a subset
                 subtree = self.__build_tree(subset)
 
                 # Add subtree
                 tree.add_child(value, subtree)
+
         return tree
 
     def train(self):
@@ -265,6 +274,8 @@ class ID3DecisionTree:
             None
         """
 
+        if self.__ds is None:
+            raise InvalidDatasetError(f"No dataset provided for training.")
         self.__tree = self.__build_tree()
 
     def predict(self, test_data):
@@ -287,7 +298,7 @@ class ID3DecisionTree:
             return "Unknown"
 
         if self.__tree is None:
-            raise ValueError("The decision tree has not been trained. Call the 'train' method first.")
+            raise ModelNotTrainedError("The decision tree has not been trained. Call the 'train' method first.")
         return recursive_predict(self.__tree, test_data)
 
     def score(self, test_ds: DataFrame):
@@ -295,11 +306,14 @@ class ID3DecisionTree:
         Evaluate the accuracy of the decision tree on a test dataset.
 
         Args:
-            test_ds (DataFrame): The test dataset containing features and true output labels.
+            test_ds (DataFrame): The test dataset containing features and true target labels.
 
         Returns:
             str: A string representing the accuracy score.
         """
+
+        if self.__tree is None:
+            raise ModelNotTrainedError("The decision tree has not been trained. Call the 'train' method first.")
 
         test_ds = list(test_ds.itertuples(index=False, name=None))
         test = [
@@ -313,8 +327,8 @@ class ID3DecisionTree:
         correct_count = 0
         for row in test:
             total_count += 1
-            output = row.pop(self.output_column_name)
-            if self.predict(row) == output:
+            target = row.pop(self.__target_column_name)
+            if self.predict(row) == target:
                 correct_count += 1
         return f"Score: {correct_count * 100 / total_count}%"
 
@@ -323,12 +337,12 @@ class ID3DecisionTree:
 
 
 if __name__ == "__main__":
-    df = pd.read_csv("Hotel Reservations.csv").sample(frac=1, random_state=42).reset_index(drop=True)
+    df = pd.read_csv("data/Hotel Reservations.csv").sample(frac=1, random_state=42).reset_index(drop=True)
     test_proportion = 0.2
     test_size = int(test_proportion * len(df))
     train_df, test_df = df[:-test_size], df[-test_size:]
 
-    decision_tree = ID3DecisionTree(ds=train_df)
+    decision_tree = ID3DecisionTree(ds=train_df, threshold=0.8)
     decision_tree.train()
 
     print(decision_tree)

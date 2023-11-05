@@ -9,3 +9,7 @@ It builds a decision tree that can be used to make predictions based on **discre
 
 Hotel Reservations Dataset source: https://www.kaggle.com/datasets/ahsan81/hotel-reservations-classification-dataset?select=Hotel+Reservations.csv
 
+## Usage
+
+- install requirements in your python environment: ```pip install -r requirements.txt```
+- train and test the algorithm: ```python main.py```

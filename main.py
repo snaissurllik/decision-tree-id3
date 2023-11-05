@@ -278,12 +278,12 @@ class ID3DecisionTree:
             raise InvalidDatasetError(f"No dataset provided for training.")
         self.__tree = self.__build_tree()
 
-    def predict(self, test_data):
+    def predict(self, vector):
         """
         Make predictions on new data using the trained decision tree.
 
         Args:
-            test_data (dict): A dictionary containing feature values for prediction.
+            vector (dict): A dictionary containing feature values for prediction.
 
         Returns:
             str: The predicted class label.
@@ -299,7 +299,7 @@ class ID3DecisionTree:
 
         if self.__tree is None:
             raise ModelNotTrainedError("The decision tree has not been trained. Call the 'train' method first.")
-        return recursive_predict(self.__tree, test_data)
+        return recursive_predict(self.__tree, vector)
 
     def score(self, test_ds: DataFrame):
         """
@@ -338,12 +338,13 @@ class ID3DecisionTree:
 
 if __name__ == "__main__":
     df = pd.read_csv("data/Hotel Reservations.csv").sample(frac=1, random_state=42).reset_index(drop=True)
-    test_proportion = 0.2
+    test_proportion = 0.25
     test_size = int(test_proportion * len(df))
     train_df, test_df = df[:-test_size], df[-test_size:]
 
     decision_tree = ID3DecisionTree(ds=train_df, threshold=0.8)
     decision_tree.train()
 
-    print(decision_tree)
+    with open("./tree", "w+", encoding="utf-8") as f:
+        f.write(str(decision_tree))
     print(decision_tree.score(test_df))
